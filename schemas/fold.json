@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "markdown",
+    "decisions"
+  ],
+  "properties": {
+    "markdown": {
+      "type": "string"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "outcome",
+          "how"
+        ],
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "settled",
+              "open",
+              "rejected"
+            ]
+          },
+          "how": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

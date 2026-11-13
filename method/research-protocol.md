@@ -1,6 +1,6 @@
 # Research protocol
 
-Each specialist's research follows these eight steps. One agent call does one step. You are told: the step number, the specialist slug, the field, the working folder `specialists/<slug>/`, and (for Step 1 and Step 5) a search budget `<n>`. Do only your step. Read only the files your step names. Research the field only; do not bring in any project or product context.
+Each specialist's research follows these eight steps. One agent call does one step. You are told: the step number, the specialist slug, the field, the working folder (`specialists/<slug>/`, or a run's own `specialists/<slug>/` for a test run), and (for Step 1 and Step 5) a search budget `<n>`. Do only your step. Read only the files your step names. Research the field only; do not bring in any project or product context.
 
 All files below sit in the working folder. Do not edit a file a step does not name, except to log a change in `plan.md` under `## Changes`.
 
@@ -113,9 +113,9 @@ Run by a fresh Claude agent. Inputs: `tasks.md`, `extracts.md`. Output: `check-a
 
 Read only those two files. Do not read `baseline-answers.md` or `sources.md`. Answer every `K` and `Q` item using the findings. Give one answer per item under `### K<n>` or `### Q<n>`. Under each answer add `Findings used:` listing the `F<n>` you drew on, or `none`.
 
-### Step 7b — Grade (Codex)
+### Step 7b — Grade (referee)
 
-Run by a Codex grader. Inputs: `tasks.md`, `baseline-answers.md`, `check-answers.md`, `extracts.md`. Output: `check.md`.
+Run by the referee provider (Codex by default; Claude when Codex makes). Inputs: `tasks.md`, `baseline-answers.md`, `check-answers.md`, `extracts.md`. Output: `check.md`.
 
 For each `K` and `Q` item, compare the answer in `check-answers.md` with the one in `baseline-answers.md`, against that item's `Excellent answer:` in `tasks.md`. Mark it `improved`, `same` or `worse`, with one line of reason. For each `improved` item, name the findings that drove the improvement (use the `Findings used:` lines, and check them against the text).
 

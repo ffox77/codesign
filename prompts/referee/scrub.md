@@ -1,4 +1,4 @@
-# Scrub (Codex)
+# Scrub (referee)
 
 Placeholders: `{{LIST_A_PATH}}`, `{{LIST_B_PATH}}` (the two un-scrubbed tension files).
 

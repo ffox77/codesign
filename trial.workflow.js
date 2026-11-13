@@ -7,14 +7,31 @@ export const meta = {
     { title: 'Critique', detail: 'one critique per role per team, each alone' },
     { title: 'Map', detail: 'one tension mapper per team' },
     { title: 'Blind', detail: 'Codex scrub, blind order draw, key' },
+    { title: 'Judge', detail: 'two Codex judges score both blind lists, one per list order' },
+    { title: 'Fold', detail: 'Codex folds both lists into a final design, then compares it with the baseline' },
   ],
 }
 
 // args: {runDir, brief, searchBudget, specialists: [{slug, field}]}
 const RUN = args.runDir.replace(/\/+$/, '')
 const SPECS = args.specialists
-const PROTOCOL = 'research-protocol.md'
-const WRAPPER = 'prompts/codex-wrapper.md'
+// Which provider makes (baseline, onboarding, critiques, mappers); the other referees
+// (grader, scrub, judges, fold, compare). The tell-check is Claude either way.
+const MAKERS = args.makers === undefined ? 'claude' : args.makers
+if (MAKERS !== 'claude' && MAKERS !== 'codex') {
+  const msg = `makers must be "claude" or "codex", not ${JSON.stringify(args.makers)}`
+  log(msg)
+  throw new Error(msg)
+}
+const PROTOCOL = 'method/research-protocol.md'
+const DISCIPLINE = 'method/discipline.md'
+const RUBRIC = 'method/rubric.md'
+const WRAPPER = 'prompts/wrappers/codex-wrapper.md'
+const MAKER_WRAPPER = 'prompts/wrappers/codex-maker-wrapper.md'
+// Where specialists live: reusable ones in specialists/ (the default); a test run can keep its own
+// under its run folder, for example runs/<name>/specialists.
+const SPEC_ROOT = (args.specialistsDir || 'specialists').replace(/\/+$/, '')
+const specDir = (spec) => `${SPEC_ROOT}/${spec.slug}`
 const REPO_LINE = 'REPO=the repo root (run `git rev-parse --show-toplevel`)'
 const OUT_LINE = 'OUT_FILE=a new file inside a fresh `mktemp -d` folder (outside the repo)'
 
@@ -32,7 +49,7 @@ const STEP = {
 }
 const STEP_LINE =
   'Return structured output: wrote = the repo-relative paths you wrote or appended to; ' +
-  'blocked = "" on success, or one line saying why you could not do the step.'
+  'blocked = an empty string on success, or one line saying why you could not do the step.'
 
 const TASKS = {
   type: 'object',
@@ -138,6 +155,80 @@ const TELL = {
   properties: { tell: { type: 'boolean' } },
 }
 
+// schemas/judge.json plus the step report. One item per blind entry, in order.
+const JUDGE_ITEMS = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['id', 'mark', 'inBaseline', 'reason'],
+    properties: {
+      id: { type: 'string' },
+      mark: { type: 'string', enum: ['real', 'obvious', 'noise'] },
+      inBaseline: { type: 'boolean' },
+      reason: { type: 'string' },
+    },
+  },
+}
+const JUDGE = {
+  type: 'object',
+  required: ['first', 'second', 'preferred', 'why', 'wrote', 'blocked'],
+  properties: {
+    ...STEP_REPORT_PROPS,
+    first: JUDGE_ITEMS,
+    second: JUDGE_ITEMS,
+    preferred: { type: 'string', enum: ['first', 'second'] },
+    why: { type: 'string' },
+  },
+}
+
+// schemas/fold.json and schemas/compare.json minus the markdown (written to file), plus the step report.
+const FOLD = {
+  type: 'object',
+  required: ['decisions', 'wrote', 'blocked'],
+  properties: {
+    ...STEP_REPORT_PROPS,
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['entry', 'outcome', 'how'],
+        properties: {
+          entry: { type: 'string' },
+          outcome: { type: 'string', enum: ['settled', 'open', 'rejected'] },
+          how: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+const COMPARE = {
+  type: 'object',
+  required: ['changes', 'briefGaps', 'wrote', 'blocked'],
+  properties: {
+    ...STEP_REPORT_PROPS,
+    changes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['section', 'change', 'entries'],
+        properties: {
+          section: { type: 'string' },
+          change: { type: 'string' },
+          entries: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    briefGaps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['entry', 'why', 'briefLine'],
+        properties: { entry: { type: 'string' }, why: { type: 'string' }, briefLine: { type: 'string' } },
+      },
+    },
+  },
+}
+
 // phase() once per title, in first-use order (branches run concurrently).
 const entered = new Set()
 const enter = (title) => {
@@ -174,7 +265,9 @@ const samePath = (p, expected) => {
 const checkStep = (label, r, expected) => {
   if (r === null || r === undefined) fail(label, 'returned nothing')
   if (typeof r !== 'object') fail(label, `returned no step report: ${String(r).slice(0, 200)}`)
-  if (typeof r.blocked === 'string' && r.blocked.trim() !== '') fail(label, `blocked: ${r.blocked.trim()}`)
+  // An agent may echo the empty value literally as "" or '': that is success too.
+  const blocked = typeof r.blocked === 'string' ? r.blocked.trim().replace(/^(""|'')$/, '') : ''
+  if (blocked !== '') fail(label, `blocked: ${blocked}`)
   const wrote = Array.isArray(r.wrote) ? r.wrote : []
   const hit = wrote.some((p) => typeof p === 'string' && samePath(p, expected))
   if (!hit) fail(label, `did not write ${expected} (wrote: ${wrote.join(', ') || 'nothing'})`)
@@ -182,6 +275,47 @@ const checkStep = (label, r, expected) => {
 }
 
 const values = (lines) => lines.join('\n')
+
+// Codex output schemas need additionalProperties: false and every property required, at every level.
+const strict = (schema) => {
+  if (!schema || typeof schema !== 'object') return schema
+  const out = { ...schema }
+  if (out.properties) {
+    out.properties = Object.fromEntries(Object.entries(out.properties).map(([k, v]) => [k, strict(v)]))
+    out.additionalProperties = false
+    out.required = Object.keys(out.properties)
+  }
+  if (out.items) out.items = strict(out.items)
+  return out
+}
+
+// A making step: Claude does it, or a Claude wrapper hands the same task text to Codex.
+const make = (prompt, opts, search = false) =>
+  MAKERS === 'claude'
+    ? agent(prompt, opts)
+    : agent(
+        values([
+          `Follow ${MAKER_WRAPPER} with these values:`,
+          `SEARCH=${search ? 'yes' : 'no'}`,
+          `SCHEMA_JSON=${JSON.stringify(strict(opts.schema))}`,
+          OUT_LINE,
+          REPO_LINE,
+          'TASK=',
+          prompt,
+        ]),
+        opts
+      )
+
+// A refereeing step's opening lines: a Claude wrapper runs it on Codex, or Claude does it itself.
+// SRC names the step's JSON answer in the caller lines that follow.
+const SRC = MAKERS === 'claude' ? "Codex's JSON" : 'the JSON'
+const refereeHead = (name, schema, inputs) =>
+  MAKERS === 'claude'
+    ? [`Follow ${WRAPPER} with these values:`, `PROMPT_FILE=prompts/referee/${name}.md`, `INPUTS=${inputs}`, `SCHEMA=schemas/${schema}.json`, OUT_LINE, REPO_LINE]
+    : [
+        `Do the task in prompts/referee/${name}.md yourself, with these values: ${inputs}`,
+        `Read only the files that prompt names, and do not edit them. Shape your answer as schemas/${schema}.json describes; that answer is the JSON.`,
+      ]
 
 // ---------- Short role names ----------
 // One "Roles: A, B" format in both tension lists, from names picked here rather than from mapper
@@ -210,10 +344,11 @@ const ROLE_NAME_LINES = ROLE_NAMES.map((n) => `- ${n}`)
 enter('Baseline')
 checkStep(
   'baseline',
-  await agent(
+  await make(
     values([
-      'Follow prompts/baseline.md with these values:',
+      'Follow prompts/make/baseline.md with these values:',
       `BRIEF=${args.brief}`,
+      `DISCIPLINE=${DISCIPLINE}`,
       `RUN_DIR=${RUN}`,
       STEP_LINE,
     ]),
@@ -230,7 +365,7 @@ const lc = (field) => field.charAt(0).toLowerCase() + field.slice(1)
 
 const critiquePrompt = (team, spec, identity) =>
   values([
-    'Follow prompts/critique.md with these values:',
+    'Follow prompts/make/critique.md with these values:',
     `IDENTITY=${identity}`,
     `SLUG=${spec.slug}`,
     'ROLES=',
@@ -251,7 +386,7 @@ const critique = async (team, spec, i, identity) => {
   const label = critiqueLabel(team, i)
   const out = `${RUN}/critiques/${team}/${spec.slug}.md`
   try {
-    checkStep(label, await agent(critiquePrompt(team, spec, identity), { label, phase: 'Critique', schema: CRITIQUE }), out)
+    checkStep(label, await make(critiquePrompt(team, spec, identity), { label, phase: 'Critique', schema: CRITIQUE }), out)
     return { label, out }
   } catch (e) {
     logError(label, e)
@@ -270,9 +405,9 @@ const mapper = async (team, label, critiquePaths) => {
   try {
     return checkStep(
       label,
-      await agent(
+      await make(
         values([
-          'Follow prompts/mapper.md with these values:',
+          'Follow prompts/make/mapper.md with these values:',
           `RUN_DIR=${RUN}`,
           'CRITIQUE_PATHS=',
           ...critiquePaths.map((p) => `- ${p}`),
@@ -295,11 +430,11 @@ const mapper = async (team, label, critiquePaths) => {
 // ---------- Onboarding steps ----------
 const step = (n, spec, extra) =>
   `Do Step ${n} of ${PROTOCOL} for specialist ${spec.slug} (field: ${spec.field}), ` +
-  `working in specialists/${spec.slug}/${extra || ''}.`
+  `working in ${specDir(spec)}/${extra || ''}.`
 const budgetNote = `, search budget ${args.searchBudget}`
 
 const probePrompt = (spec, tasks) => {
-  const out = `specialists/${spec.slug}/baseline-answers.md`
+  const out = `${specDir(spec)}/baseline-answers.md`
   const items = tasks.items.map((it) => `### ${it.id}\n${it.text}`)
   return values([
     'Answer each item below from your own knowledge only.',
@@ -315,23 +450,21 @@ const probePrompt = (spec, tasks) => {
 
 const graderPrompt = (spec) =>
   values([
-    `Follow ${WRAPPER} with these values:`,
-    'PROMPT_FILE=prompts/grader.md',
-    `INPUTS=SPEC_DIR=specialists/${spec.slug}`,
-    'SCHEMA=schemas/grade.json',
-    OUT_LINE,
-    REPO_LINE,
-    `Then, as the caller, write specialists/${spec.slug}/check.md from Codex's JSON, in the format of ` +
+    ...refereeHead('grader', 'grade', `SPEC_DIR=${specDir(spec)}`),
+    `Then, as the caller, write ${specDir(spec)}/check.md from ${SRC}, in the format of ` +
       `Step 7b of ${PROTOCOL}: ## Items, the fixed ## Counts block (counts computed from the lists), ## Kept, ## Dropped.`,
-    `Return Codex's JSON unchanged, plus slug=${spec.slug}.`,
-    `Also return wrote = the repo-relative paths you wrote (check.md among them), and blocked = "" on success, ` +
+    `Return ${SRC} unchanged, plus slug=${spec.slug}.`,
+    `Also return wrote = the repo-relative paths you wrote (check.md among them), and blocked = an empty string on success, ` +
       'or one line saying why you could not grade or write check.md.',
   ])
 
 const onboard = (spec) => async () => {
   const L = (s) => `onboard:${spec.slug}:${s}`
-  const run = async (s, prompt, file, schema = STEP) =>
-    checkStep(L(s), await agent(prompt, { label: L(s), phase: 'Onboard', schema }), `specialists/${spec.slug}/${file}`)
+  const run = async (s, prompt, file, schema = STEP) => {
+    const opts = { label: L(s), phase: 'Onboard', schema }
+    const r = s === 'check-grade' ? await agent(prompt, opts) : await make(prompt, opts, s === 'search')
+    return checkStep(L(s), r, `${specDir(spec)}/${file}`)
+  }
   const withLine = (p) => `${p} ${STEP_LINE}`
 
   await run('plan', withLine(step(1, spec, budgetNote)), 'plan.md')
@@ -371,7 +504,7 @@ const [researchSide, labelSide] = await parallel([
         enter('Critique')
         const identity =
           `You are the specialist on this team for: ${lc(spec.field)}. ` +
-          `Load your knowledge first: read specialists/${spec.slug}/knowledge.md.`
+          `Load your knowledge first: read ${specDir(spec)}/knowledge.md.`
         const c = await critique('research', spec, i, identity)
         return { grade, ...c }
       }
@@ -429,15 +562,10 @@ if (mappersFailed.length > 0) {
   scrub = await blindAgent(
     'scrub',
     values([
-      `Follow ${WRAPPER} with these values:`,
-      'PROMPT_FILE=prompts/scrub.md',
-      `INPUTS=LIST_A_PATH=${RUN}/tensions/research.md, LIST_B_PATH=${RUN}/tensions/label.md`,
-      'SCHEMA=schemas/scrub.json',
-      OUT_LINE,
-      REPO_LINE,
+      ...refereeHead('scrub', 'scrub', `LIST_A_PATH=${RUN}/tensions/research.md, LIST_B_PATH=${RUN}/tensions/label.md`),
       'Then, as the caller:',
       '1. Draw the blind order with `echo $((RANDOM % 2))`. Use the draw to decide which of list A and list B becomes list-1; the other becomes list-2.',
-      `2. Write ${RUN}/blind/list-1.md and ${RUN}/blind/list-2.md from Codex's JSON, one entry per item, in order, numbered from T1, in exactly this form:`,
+      `2. Write ${RUN}/blind/list-1.md and ${RUN}/blind/list-2.md from ${SRC}, one entry per item, in order, numbered from T1, in exactly this form:`,
       '   ### T<n>: <title>',
       '   Roles: <role names>',
       '   Side 1: <side1>',
@@ -449,7 +577,7 @@ if (mappersFailed.length > 0) {
       "   No \"Found before cut:\" line. Add nothing else.",
       "3. Check that each list's `### T` count equals its source tensions file's `### T` count. If not, stop and fail loudly.",
       `4. Write ${RUN}/key.md: the draw value, and which tensions file each blind list came from.`,
-      `5. Copy rubric.md to ${RUN}/blind/rubric.md.`,
+      `5. Copy ${RUBRIC} to ${RUN}/blind/rubric.md.`,
       'Return only the two entry counts, by list number. Say nothing about which list is which.',
     ]),
     SCRUB_RESULT
@@ -477,6 +605,150 @@ if (mappersFailed.length > 0) {
   }
 }
 
+// ---------- Judges ----------
+// A second scorer beside the person: Codex marks each blind entry real / obvious / noise and says
+// whether the baseline already raised it. Two calls, one per list order, since judges tend to
+// favor whichever list they see first. Judges see list numbers only, never tensions or the key.
+let judge = null
+let judgesAgree = null
+if (scrub) {
+  enter('Judge')
+  const judgeRun = async (n) => {
+    const label = `judge-${n}`
+    const firstShown = n
+    const secondShown = 3 - n
+    const out = `${RUN}/judge/${label}.json`
+    try {
+      const r = checkStep(
+        label,
+        await agent(
+          values([
+            ...refereeHead(
+              'judge',
+              'judge',
+              `FIRST_PATH=${RUN}/blind/list-${firstShown}.md, SECOND_PATH=${RUN}/blind/list-${secondShown}.md, ` +
+                `BRIEF_PATH=${args.brief}, BASELINE_PATH=${RUN}/baseline.md`
+            ),
+            `Then, as the caller, write ${SRC} unchanged to ${out}.`,
+            `Return ${SRC} unchanged.`,
+            `Also return wrote = the repo-relative paths you wrote (${out} among them), and blocked = an empty string ` +
+              'on success, or one line saying why you could not judge or write the file.',
+          ]),
+          { label, phase: 'Judge', schema: JUDGE }
+        ),
+        out
+      )
+      const want = { first: scrub[`list${firstShown}Count`], second: scrub[`list${secondShown}Count`] }
+      for (const side of ['first', 'second']) {
+        const got = Array.isArray(r[side]) ? r[side].length : 0
+        if (got !== want[side]) fail(label, `${side} list has ${got} entries; the blind list has ${want[side]}`)
+      }
+      const tally = (items) => ({
+        real: items.filter((it) => it.mark === 'real').length,
+        obvious: items.filter((it) => it.mark === 'obvious').length,
+        noise: items.filter((it) => it.mark === 'noise').length,
+        realNew: items.filter((it) => it.mark === 'real' && it.inBaseline === false).length,
+        total: items.length,
+      })
+      return {
+        firstShown,
+        preferred: r.preferred === 'first' ? firstShown : secondShown,
+        [`list-${firstShown}`]: tally(r.first),
+        [`list-${secondShown}`]: tally(r.second),
+      }
+    } catch (e) {
+      logError(label, e)
+      failed.push(label)
+      return null
+    }
+  }
+  const judged = await parallel([() => judgeRun(1), () => judgeRun(2)])
+  judge = judged.filter(Boolean).map((j) => ({ firstShown: j.firstShown, preferred: j.preferred, 'list-1': j['list-1'], 'list-2': j['list-2'] }))
+  if (judge.length === 2) judgesAgree = judge[0].preferred === judge[1].preferred
+}
+
+// ---------- Fold and compare ----------
+// Codex revises the baseline against both blind lists into final.md, then a separate call compares
+// final.md with the baseline and names the conflicts the brief should have stated. Both read the
+// blind lists only, so entries are named by list number ("list-1 T3"), never by team.
+let fold = null
+let compare = null
+if (scrub) {
+  enter('Fold')
+  const listInputs = `LIST_1_PATH=${RUN}/blind/list-1.md, LIST_2_PATH=${RUN}/blind/list-2.md`
+  const baseInputs = `BRIEF_PATH=${args.brief}, BASELINE_PATH=${RUN}/baseline.md`
+  const refereeStep = (name, inputs, out, keep) =>
+    values([
+      ...refereeHead(name, name, inputs),
+      `Then, as the caller, write the JSON's markdown field, unchanged, to ${out}.`,
+      `Return the JSON's ${keep} unchanged, without the markdown field.`,
+      `Also return wrote = the repo-relative paths you wrote (${out} among them), and blocked = an empty string ` +
+        'on success, or one line saying why you could not run the step or write the file.',
+    ])
+  const ENTRY_RE = /^list-([12]) T(\d+)$/
+  const counts12 = { 1: scrub.list1Count, 2: scrub.list2Count }
+  const known = (e) => {
+    const m = typeof e === 'string' ? e.trim().match(ENTRY_RE) : null
+    return m && Number(m[2]) >= 1 && Number(m[2]) <= counts12[m[1]] ? `list-${m[1]} T${Number(m[2])}` : null
+  }
+
+  const foldOut = `${RUN}/final.md`
+  try {
+    const r = checkStep(
+      'fold',
+      await agent(refereeStep('fold', `${baseInputs}, ${listInputs}`, foldOut, 'decisions field'), {
+        label: 'fold',
+        phase: 'Fold',
+        schema: FOLD,
+      }),
+      foldOut
+    )
+    const decisions = Array.isArray(r.decisions) ? r.decisions : []
+    const ids = decisions.map((d) => known(d && d.entry))
+    const bad = decisions.filter((d, i) => !ids[i]).map((d) => (d && d.entry) || '?')
+    if (bad.length) fail('fold', `unknown entries: ${bad.join(', ')}`)
+    const want = counts12[1] + counts12[2]
+    if (new Set(ids).size !== want) fail('fold', `decided ${new Set(ids).size} distinct entries; the blind lists have ${want}`)
+    const byList = (n) => {
+      const mine = decisions.filter((d, i) => ids[i].startsWith(`list-${n} `))
+      return {
+        settled: mine.filter((d) => d.outcome === 'settled').length,
+        open: mine.filter((d) => d.outcome === 'open').length,
+        rejected: mine.filter((d) => d.outcome === 'rejected').length,
+      }
+    }
+    fold = { 'list-1': byList(1), 'list-2': byList(2) }
+  } catch (e) {
+    logError('fold', e)
+    failed.push('fold')
+  }
+
+  if (fold) {
+    const compareOut = `${RUN}/compare.md`
+    try {
+      const r = checkStep(
+        'compare',
+        await agent(
+          refereeStep('compare', `${baseInputs}, FINAL_PATH=${foldOut}, ${listInputs}`, compareOut, 'changes and briefGaps fields'),
+          { label: 'compare', phase: 'Fold', schema: COMPARE }
+        ),
+        compareOut
+      )
+      const changes = Array.isArray(r.changes) ? r.changes : []
+      const drove = (n) =>
+        changes.filter((c) => Array.isArray(c.entries) && c.entries.some((e) => (known(e) || '').startsWith(`list-${n} `))).length
+      compare = {
+        changes: changes.length,
+        changesByList: { 'list-1': drove(1), 'list-2': drove(2) },
+        briefGaps: (Array.isArray(r.briefGaps) ? r.briefGaps : []).map((g) => known(g && g.entry)).filter(Boolean),
+      }
+    } catch (e) {
+      logError('compare', e)
+      failed.push('compare')
+    }
+  }
+}
+
 // ---------- Result: counts per list number and paths, never a team or slug ----------
 const checks = []
 const missing = []
@@ -484,7 +756,7 @@ chains.forEach((c, i) => {
   if (c) checks.push({ specialist: i + 1, ...counts(c.grade) })
   else missing.push(i + 1)
 })
-const ORDER = ['mapper-a', 'mapper-b', 'scrub', 'tell-check']
+const ORDER = ['mapper-a', 'mapper-b', 'scrub', 'tell-check', 'judge-1', 'judge-2', 'fold', 'compare']
 const rank = (l) => (/^critique-\d+$/.test(l) ? Number(l.slice(9)) : 100 + ORDER.indexOf(l))
 failed.sort((a, b) => rank(a) - rank(b))
 
@@ -495,11 +767,17 @@ return {
   lists: scrub ? { 'list-1': scrub.list1Count, 'list-2': scrub.list2Count } : null,
   scrubSkipped,
   tellCheck: tell && typeof tell.tell === 'boolean' ? tell.tell : null,
+  judge,
+  judgesAgree,
+  fold,
+  compare,
   paths: [
     `${RUN}/baseline.md`,
     `${RUN}/blind/list-1.md`,
     `${RUN}/blind/list-2.md`,
     `${RUN}/blind/rubric.md`,
     `${RUN}/key.md`,
+    `${RUN}/final.md`,
+    `${RUN}/compare.md`,
   ],
 }

@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "markdown",
+    "changes",
+    "briefGaps"
+  ],
+  "properties": {
+    "markdown": {
+      "type": "string"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "section",
+          "change",
+          "entries"
+        ],
+        "properties": {
+          "section": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "briefGaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "why",
+          "briefLine"
+        ],
+        "properties": {
+          "entry": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "briefLine": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

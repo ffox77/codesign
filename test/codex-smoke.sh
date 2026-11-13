@@ -3,12 +3,12 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 command -v codex >/dev/null 2>&1 || { echo "FAIL: codex is not on PATH" >&2; exit 1; }
-[ -f "$REPO/prompts/grader.md" ] || { echo "FAIL: prompts/grader.md missing" >&2; exit 1; }
+[ -f "$REPO/prompts/referee/grader.md" ] || { echo "FAIL: prompts/referee/grader.md missing" >&2; exit 1; }
 [ -f "$REPO/schemas/grade.json" ] || { echo "FAIL: schemas/grade.json missing" >&2; exit 1; }
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 OUT="$TMP/grade-out.json"
-PROMPT="Follow prompts/grader.md with these values: FIXTURE_DIR=test/fixtures/grade (tasks.md, baseline-answers.md, check-answers.md and extracts.md are in that folder)."
+PROMPT="Follow prompts/referee/grader.md with these values: FIXTURE_DIR=test/fixtures/grade (tasks.md, baseline-answers.md, check-answers.md and extracts.md are in that folder)."
 codex exec -C "$REPO" -s read-only --ephemeral \
   --output-schema schemas/grade.json -o "$OUT" "$PROMPT" < /dev/null
 [ -s "$OUT" ] || { echo "FAIL: Codex wrote no output file" >&2; exit 1; }

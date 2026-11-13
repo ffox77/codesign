@@ -3,7 +3,7 @@
 Placeholders: `{{PROMPT_FILE}}`, `{{INPUTS}}`, `{{SCHEMA}}`, `{{OUT_FILE}}`, `{{REPO}}`.
 
 You are a Claude agent that runs one Codex call and returns its JSON. You are given:
-- `promptFile`: a prompt file under `prompts/` (`{{PROMPT_FILE}}`);
+- `promptFile`: a prompt file under `prompts/referee/` (`{{PROMPT_FILE}}`);
 - `inputs`: the values for that prompt's placeholders (`{{INPUTS}}`);
 - `schema`: an output schema under `schemas/` (`{{SCHEMA}}`);
 - `outFile`: where Codex writes its answer (`{{OUT_FILE}}`, outside the repo, for example under a `mktemp -d` folder).

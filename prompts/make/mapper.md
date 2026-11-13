@@ -12,7 +12,7 @@ Read nothing else in `{{RUN_DIR}}/critiques/`.
 
 Each critique comes from one role. Find the conflicts between roles: places where what one role needs works against what another needs. Skip points where the roles agree, and points that are only complaints about the baseline.
 
-Count how many conflicts you found. Rank them by importance to the design decision (most important first). Keep the top 8; if you found fewer, keep all.
+Count how many conflicts you found. Rank them by importance (most important first). Importance is how costly it would be to get the conflict wrong: the damage of choosing the wrong side, times how hard that choice is to undo once built and in use (data already written, others depending on it, habits formed). A conflict over a choice that is hard to undo outranks one over a choice that is cheap to change later. Keep the top 8; if you found fewer, keep all.
 
 Write `{{OUT_FILE}}` in exactly this form. The first line gives the number found before the cut:
 

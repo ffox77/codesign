@@ -1,8 +1,8 @@
-# Research-check grader (Codex)
+# Research-check grader (referee)
 
 Placeholders: `{{SPEC_DIR}}` (folder holding `tasks.md`, `baseline-answers.md`, `check-answers.md`, `extracts.md`). Used by the wrapper; the smoke test passes `FIXTURE_DIR` with the same meaning.
 
-You are grading step 7b of the research protocol (`research-protocol.md`, "Step 7b"). Read only the four files in the folder you were given: `tasks.md`, `baseline-answers.md`, `check-answers.md`, `extracts.md`. Do not edit anything.
+You are grading step 7b of the research protocol (`method/research-protocol.md`, "Step 7b"). Read only the four files in the folder you were given: `tasks.md`, `baseline-answers.md`, `check-answers.md`, `extracts.md`. Do not edit anything.
 
 For each `K` and `Q` item in `tasks.md`:
 1. Read the item's `Excellent answer:` line.

@@ -83,6 +83,20 @@ function makeStub(nullLabels = [], overrides = {}) {
     }
     if (label === 'scrub') return { list1Count: 1, list2Count: 1 };
     if (label === 'tell-check') return { tell: false };
+    if (/^judge-[12]$/.test(label)) {
+      return {
+        first: [{ id: 'T1', mark: 'real', inBaseline: false, reason: 'r' }],
+        second: [{ id: 'T1', mark: 'noise', inBaseline: true, reason: 'r' }],
+        preferred: 'first',
+        why: 'w',
+        ...wrote(`${RUN}/judge/${label}.json`),
+      };
+    }
+    if (label === 'fold') return { decisions: [
+      { entry: 'list-1 T1', outcome: 'settled', how: 'h' },
+      { entry: 'list-2 T1', outcome: 'settled', how: 'h' },
+    ], ...wrote(`${RUN}/final.md`) };
+    if (label === 'compare') return { changes: [], briefGaps: [], ...wrote(`${RUN}/compare.md`) };
     if (m) return ok(m[1], m[2]);
     return 'done';
   };
@@ -94,16 +108,16 @@ const indexOf = (calls, label) => calls.findIndex((c) => c.opts.label === label)
 const isResearchCritique = (c) => /^critique-/.test(c.opts.label) && c.prompt.includes('critiques/research/');
 const isLabelCritique = (c) => /^critique-/.test(c.opts.label) && c.prompt.includes('critiques/label/');
 
-test('makes 49 agent calls with 4 specialists', async () => {
+test('makes 53 agent calls with 4 specialists', async () => {
   const { calls } = await run();
-  assert.strictEqual(calls.length, 49);
+  assert.strictEqual(calls.length, 53);
   assert.strictEqual(calls.filter((c) => c.opts.label.startsWith('onboard:')).length, 36);
 });
 
 test('meta phases equal the phase() calls', async () => {
   const { meta, phases, calls } = await run();
   const titles = meta.phases.map((p) => p.title);
-  assert.deepStrictEqual(titles, ['Baseline', 'Onboard', 'Critique', 'Map', 'Blind']);
+  assert.deepStrictEqual(titles, ['Baseline', 'Onboard', 'Critique', 'Map', 'Blind', 'Judge', 'Fold']);
   assert.deepStrictEqual(phases, titles);
   for (const c of calls) assert.ok(titles.includes(c.opts.phase), `bad phase on ${c.opts.label}`);
 });
@@ -191,13 +205,13 @@ test('grader and scrub prompts point at codex-wrapper.md and a schema in schemas
   const graders = calls.filter((c) => c.opts.label.endsWith(':check-grade'));
   assert.strictEqual(graders.length, 4);
   for (const c of graders) {
-    assert.ok(c.prompt.includes('prompts/codex-wrapper.md'));
-    assert.ok(c.prompt.includes('prompts/grader.md'));
+    assert.ok(c.prompt.includes('prompts/wrappers/codex-wrapper.md'));
+    assert.ok(c.prompt.includes('prompts/referee/grader.md'));
     assert.ok(c.prompt.includes('schemas/grade.json'));
   }
   const scrub = byLabel(calls, 'scrub');
-  assert.ok(scrub.prompt.includes('prompts/codex-wrapper.md'));
-  assert.ok(scrub.prompt.includes('prompts/scrub.md'));
+  assert.ok(scrub.prompt.includes('prompts/wrappers/codex-wrapper.md'));
+  assert.ok(scrub.prompt.includes('prompts/referee/scrub.md'));
   assert.ok(scrub.prompt.includes('schemas/scrub.json'));
   assert.ok(scrub.prompt.includes('echo $((RANDOM % 2))'));
 });
@@ -231,7 +245,7 @@ test('label critiques are called before any compress', async () => {
 test('baseline runs first', async () => {
   const { calls } = await run();
   assert.strictEqual(calls[0].opts.label, 'baseline');
-  assert.ok(calls[0].prompt.includes('prompts/baseline.md'));
+  assert.ok(calls[0].prompt.includes('prompts/make/baseline.md'));
 });
 
 test('a specialist whose chain returns null is listed in missing and the run still returns lists', async () => {
@@ -281,7 +295,7 @@ test('onboarding steps ask for and use the step-report schema', async () => {
   for (const c of steps) {
     const props = c.opts.schema && c.opts.schema.properties;
     assert.ok(props && props.wrote && props.blocked, `no step report schema on ${c.opts.label}`);
-    if (!c.opts.label.endsWith(':check-grade')) assert.match(c.prompt, /blocked = ""/, c.opts.label);
+    if (!c.opts.label.endsWith(':check-grade')) assert.match(c.prompt, /blocked = an empty string on success/, c.opts.label);
   }
 });
 
@@ -322,7 +336,7 @@ test('a tasks step with no items fails that chain', async () => {
 
 test('no output file in the protocol or prompts is named like a report', () => {
   const files = [
-    path.join(CODESIGN, 'research-protocol.md'),
+    path.join(CODESIGN, 'method/research-protocol.md'),
     ...fs.readdirSync(path.join(CODESIGN, 'prompts')).filter((f) => f.endsWith('.md')).map((f) => path.join(CODESIGN, 'prompts', f)),
   ];
   const bad = [];
@@ -345,7 +359,7 @@ test('baseline, critiques and mappers ask for and use the step-report schema', a
     const props = c.opts.schema && c.opts.schema.properties;
     assert.ok(props && props.wrote && props.blocked, `no step report schema on ${c.opts.label}`);
     assert.ok(c.opts.schema.required.includes('wrote') && c.opts.schema.required.includes('blocked'), c.opts.label);
-    assert.match(c.prompt, /blocked = ""/, c.opts.label);
+    assert.match(c.prompt, /blocked = an empty string on success/, c.opts.label);
   }
 });
 
@@ -357,6 +371,12 @@ test('a blocked baseline stops the run', async () => {
     /baseline failed: blocked: could not write/
   );
   assert.deepStrictEqual(seen, ['baseline']);
+});
+
+test('a step that echoes blocked as a literal "" counts as success', async () => {
+  const { result } = await run([], { baseline: { wrote: [`${RUN}/baseline.md`], blocked: '""' } });
+  assert.deepStrictEqual(result.missing, []);
+  assert.deepStrictEqual(result.failed, []);
 });
 
 test('a baseline that wrote the wrong file stops the run', async () => {
@@ -526,4 +546,256 @@ test('an absolute path to another slug\'s file still fails the step', async () =
   const label = 'onboard:codesign-daily-user:plan';
   const r = await run([], { [label]: { wrote: [`${ABS}/specialists/codesign-eval-methods/plan.md`], blocked: '' } });
   assertOnboardFailed(r, label, /did not write specialists\/codesign-daily-user\/plan\.md/);
+});
+
+const JUDGE_COUNTS = {
+  real: { real: 1, obvious: 0, noise: 0, realNew: 1, total: 1 },
+  noise: { real: 0, obvious: 0, noise: 1, realNew: 0, total: 1 },
+};
+
+test('two judges run after the scrub, one per list order, through Codex', async () => {
+  const { calls } = await run();
+  const j1 = byLabel(calls, 'judge-1');
+  const j2 = byLabel(calls, 'judge-2');
+  assert.ok(j1 && j2);
+  for (const c of [j1, j2]) {
+    assert.ok(indexOf(calls, c.opts.label) > indexOf(calls, 'scrub'));
+    assert.strictEqual(c.opts.phase, 'Judge');
+    assert.ok(c.prompt.includes('prompts/wrappers/codex-wrapper.md'));
+    assert.ok(c.prompt.includes('PROMPT_FILE=prompts/referee/judge.md'));
+    assert.ok(c.prompt.includes('SCHEMA=schemas/judge.json'));
+    assert.ok(c.prompt.includes(`BRIEF_PATH=${ARGS.brief}`));
+    assert.ok(c.prompt.includes(`BASELINE_PATH=${RUN}/baseline.md`));
+    assert.ok(c.prompt.includes(`${RUN}/judge/${c.opts.label}.json`));
+    assert.doesNotMatch(c.prompt, /tensions|key\.md|label|team|specialist|knowledge/i);
+  }
+  assert.ok(j1.prompt.includes(`FIRST_PATH=${RUN}/blind/list-1.md, SECOND_PATH=${RUN}/blind/list-2.md`));
+  assert.ok(j2.prompt.includes(`FIRST_PATH=${RUN}/blind/list-2.md, SECOND_PATH=${RUN}/blind/list-1.md`));
+});
+
+test('judge results are mapped back to list numbers', async () => {
+  const { result } = await run();
+  assert.deepStrictEqual(result.judge, [
+    { firstShown: 1, preferred: 1, 'list-1': JUDGE_COUNTS.real, 'list-2': JUDGE_COUNTS.noise },
+    { firstShown: 2, preferred: 2, 'list-1': JUDGE_COUNTS.noise, 'list-2': JUDGE_COUNTS.real },
+  ]);
+  assert.strictEqual(result.judgesAgree, false);
+});
+
+test('a failed judge goes in failed and the other judge still reports', async () => {
+  const { result } = await run(['judge-2']);
+  assert.deepStrictEqual(result.failed, ['judge-2']);
+  assert.strictEqual(result.judge.length, 1);
+  assert.strictEqual(result.judge[0].firstShown, 1);
+  assert.strictEqual(result.judgesAgree, null);
+});
+
+test('a judge whose entry count differs from the blind list fails', async () => {
+  const bad = {
+    first: [],
+    second: [{ id: 'T1', mark: 'real', inBaseline: false, reason: 'r' }],
+    preferred: 'second',
+    why: 'w',
+    ...wrote(`${RUN}/judge/judge-1.json`),
+  };
+  const { result, logs } = await run([], { 'judge-1': bad });
+  assert.deepStrictEqual(result.failed, ['judge-1']);
+  assert.ok(logs.some((l) => l.startsWith('judge-1 failed:') && /entries/.test(l)), JSON.stringify(logs));
+});
+
+test('a failed scrub skips the judges', async () => {
+  const { calls, result } = await run(['scrub']);
+  assert.strictEqual(indexOf(calls, 'judge-1'), -1);
+  assert.strictEqual(indexOf(calls, 'judge-2'), -1);
+  assert.strictEqual(result.judge, null);
+});
+
+// ---------- Fold and compare ----------
+const FOLD_OK = {
+  decisions: [
+    { entry: 'list-1 T1', outcome: 'settled', how: 'h' },
+    { entry: 'list-2 T1', outcome: 'open', how: 'h' },
+  ],
+  ...wrote(`${RUN}/final.md`),
+};
+const COMPARE_OK = {
+  changes: [
+    { section: 's1', change: 'c', entries: ['list-1 T1'] },
+    { section: 's2', change: 'c', entries: ['list-1 T1', 'list-2 T1'] },
+  ],
+  briefGaps: [{ entry: 'list-1 T1', why: 'w', briefLine: 'b' }],
+  ...wrote(`${RUN}/compare.md`),
+};
+const runFold = (nullLabels = [], overrides = {}) => run(nullLabels, { fold: FOLD_OK, compare: COMPARE_OK, ...overrides });
+
+test('fold runs after the judges and compare after fold, both through Codex on the blind lists', async () => {
+  const { calls } = await runFold();
+  const fold = byLabel(calls, 'fold');
+  const compare = byLabel(calls, 'compare');
+  assert.ok(fold && compare);
+  assert.ok(indexOf(calls, 'fold') > indexOf(calls, 'judge-2'));
+  assert.ok(indexOf(calls, 'compare') > indexOf(calls, 'fold'));
+  for (const [c, name] of [[fold, 'fold'], [compare, 'compare']]) {
+    assert.strictEqual(c.opts.phase, 'Fold');
+    assert.ok(c.prompt.includes('prompts/wrappers/codex-wrapper.md'));
+    assert.ok(c.prompt.includes(`PROMPT_FILE=prompts/referee/${name}.md`));
+    assert.ok(c.prompt.includes(`SCHEMA=schemas/${name}.json`));
+    assert.ok(c.prompt.includes(`LIST_1_PATH=${RUN}/blind/list-1.md`));
+    assert.ok(c.prompt.includes(`LIST_2_PATH=${RUN}/blind/list-2.md`));
+    assert.ok(c.prompt.includes(`BRIEF_PATH=${ARGS.brief}`));
+    assert.ok(c.prompt.includes(`BASELINE_PATH=${RUN}/baseline.md`));
+    assert.doesNotMatch(c.prompt, /tensions|key\.md|label|team|specialist|knowledge/i);
+  }
+  assert.ok(compare.prompt.includes(`FINAL_PATH=${RUN}/final.md`));
+});
+
+test('fold and compare results are counted by list number', async () => {
+  const { result } = await runFold();
+  assert.deepStrictEqual(result.fold, {
+    'list-1': { settled: 1, open: 0, rejected: 0 },
+    'list-2': { settled: 0, open: 1, rejected: 0 },
+  });
+  assert.deepStrictEqual(result.compare, {
+    changes: 2,
+    changesByList: { 'list-1': 2, 'list-2': 1 },
+    briefGaps: ['list-1 T1'],
+  });
+  assert.ok(result.paths.includes(`${RUN}/final.md`));
+  assert.ok(result.paths.includes(`${RUN}/compare.md`));
+  assert.doesNotMatch(JSON.stringify(result), /research|label/i);
+});
+
+test('a fold that skips an entry fails, and compare is skipped', async () => {
+  const short = { ...FOLD_OK, decisions: FOLD_OK.decisions.slice(0, 1) };
+  const { calls, result, logs } = await runFold([], { fold: short });
+  assert.deepStrictEqual(result.failed, ['fold']);
+  assert.ok(logs.some((l) => l.startsWith('fold failed:') && /entries/.test(l)), JSON.stringify(logs));
+  assert.strictEqual(indexOf(calls, 'compare'), -1);
+  assert.strictEqual(result.fold, null);
+  assert.strictEqual(result.compare, null);
+});
+
+test('a decision naming an unknown entry fails the fold', async () => {
+  const bad = { ...FOLD_OK, decisions: [FOLD_OK.decisions[0], { entry: 'list-2 T9', outcome: 'open', how: 'h' }] };
+  const { result } = await runFold([], { fold: bad });
+  assert.deepStrictEqual(result.failed, ['fold']);
+});
+
+test('a failed compare goes in failed and keeps the fold result', async () => {
+  const { result } = await runFold(['compare']);
+  assert.deepStrictEqual(result.failed, ['compare']);
+  assert.ok(result.fold);
+  assert.strictEqual(result.compare, null);
+});
+
+test('a failed scrub skips fold and compare', async () => {
+  const { calls, result } = await runFold(['scrub']);
+  assert.strictEqual(indexOf(calls, 'fold'), -1);
+  assert.strictEqual(result.fold, null);
+  assert.strictEqual(result.compare, null);
+});
+
+// ---------- Swapped providers: Codex makes, Claude referees ----------
+const SWAP_ARGS = { ...ARGS, makers: 'codex' };
+const runSwap = (nullLabels, overrides) => runWorkflow(SCRIPT, { args: SWAP_ARGS, agentStub: makeStub(nullLabels, overrides) });
+const MAKER_RE = /^(baseline|critique-\d+|mapper-[ab]|onboard:[^:]+:(plan|viewpoints|tasks|probe|search|extract|check-answer|compress))$/;
+const REFEREE_RE = /^(onboard:[^:]+:check-grade|scrub|judge-[12]|fold|compare)$/;
+
+test('with makers=codex, every making step goes through the Codex maker wrapper with a strict schema', async () => {
+  const { calls: plain } = await run();
+  const { calls, result } = await runSwap();
+  assert.strictEqual(calls.length, plain.length);
+  assert.deepStrictEqual(result.failed, []);
+  const makers = calls.filter((c) => MAKER_RE.test(c.opts.label));
+  assert.strictEqual(makers.length, 1 + 4 * 8 + 8 + 2);
+  for (const c of makers) {
+    assert.ok(c.prompt.startsWith('Follow prompts/wrappers/codex-maker-wrapper.md'), c.opts.label);
+    const orig = byLabel(plain, c.opts.label).prompt;
+    assert.ok(c.prompt.endsWith(`TASK=\n${orig}`), `task text differs for ${c.opts.label}`);
+    const line = c.prompt.split('\n').find((l) => l.startsWith('SCHEMA_JSON='));
+    const schema = JSON.parse(line.slice('SCHEMA_JSON='.length));
+    assert.strictEqual(schema.additionalProperties, false, c.opts.label);
+    assert.deepStrictEqual([...schema.required].sort(), Object.keys(schema.properties).sort(), c.opts.label);
+    const search = c.opts.label.endsWith(':search') ? 'yes' : 'no';
+    assert.ok(c.prompt.includes(`\nSEARCH=${search}\n`), c.opts.label);
+  }
+});
+
+test('with makers=codex, the refereeing steps are done by Claude from the same prompt files', async () => {
+  const { calls } = await runSwap();
+  const refs = calls.filter((c) => REFEREE_RE.test(c.opts.label));
+  assert.strictEqual(refs.length, 4 + 1 + 2 + 2);
+  const file = (l) =>
+    l.endsWith(':check-grade') ? 'grader' : l.startsWith('judge-') ? 'judge' : l;
+  for (const c of refs) {
+    assert.doesNotMatch(c.prompt, /codex/i, c.opts.label);
+    assert.ok(c.prompt.startsWith(`Do the task in prompts/referee/${file(c.opts.label)}.md yourself`), c.opts.label);
+  }
+  const tell = byLabel(calls, 'tell-check');
+  assert.doesNotMatch(tell.prompt, /codex/i);
+});
+
+test('the default run keeps Claude making and Codex refereeing', async () => {
+  const { calls } = await run();
+  for (const c of calls.filter((c) => MAKER_RE.test(c.opts.label))) assert.doesNotMatch(c.prompt, /codex/i, c.opts.label);
+  for (const c of calls.filter((c) => REFEREE_RE.test(c.opts.label))) assert.ok(c.prompt.includes('prompts/wrappers/codex-wrapper.md'), c.opts.label);
+});
+
+test('an unknown makers value stops the run before any agent starts', async () => {
+  const seen = [];
+  const stub = makeStub();
+  await assert.rejects(
+    runWorkflow(SCRIPT, { args: { ...ARGS, makers: 'gpt' }, agentStub: (p, o) => (seen.push(o.label), stub(p, o)) }),
+    /makers/
+  );
+  assert.deepStrictEqual(seen, []);
+});
+
+// ---------- Shared design discipline ----------
+test('the baseline step reads the shared discipline file, with either maker', async () => {
+  for (const r of [run, runSwap]) {
+    const { calls } = await r();
+    assert.ok(byLabel(calls, 'baseline').prompt.includes('DISCIPLINE=method/discipline.md'));
+  }
+  const baseline = fs.readFileSync(path.join(CODESIGN, 'prompts/make/baseline.md'), 'utf8');
+  assert.match(baseline, /\{\{DISCIPLINE\}\}/);
+  assert.ok(fs.existsSync(path.join(CODESIGN, 'method/discipline.md')));
+});
+
+test('critiques do not get the discipline file, so it cannot differ between teams', async () => {
+  const { calls } = await run();
+  for (const c of calls.filter((c) => /^critique-/.test(c.opts.label))) assert.doesNotMatch(c.prompt, /discipline/i);
+});
+
+test('the shared mapper prompt defines importance by how hard a choice is to undo', () => {
+  const mapper = fs.readFileSync(path.join(CODESIGN, 'prompts/make/mapper.md'), 'utf8');
+  assert.match(mapper, /hard that choice is to undo/);
+});
+
+// ---------- Layout ----------
+test('every prompt, method and schema file named in an agent prompt exists, with either maker', async () => {
+  for (const r of [run, runSwap]) {
+    const { calls } = await r();
+    const named = new Set();
+    for (const c of calls) for (const m of c.prompt.matchAll(/\b(?:prompts|method|schemas)\/[\w/-]+\.(?:md|json)/g)) named.add(m[0]);
+    assert.ok(named.size >= 10, [...named].join(', '));
+    for (const p of named) assert.ok(fs.existsSync(path.join(CODESIGN, p)), `missing ${p}`);
+  }
+});
+
+test('specialistsDir moves every specialist path, including the research identity line', async () => {
+  const DIR = `${RUN}/specialists`;
+  const base = makeStub();
+  const stub = (prompt, opts) => {
+    const r = base(prompt, opts);
+    if (opts.label.startsWith('onboard:') && r && Array.isArray(r.wrote)) return { ...r, wrote: r.wrote.map((p) => `${RUN}/${p}`) };
+    return r;
+  };
+  const { calls, result } = await runWorkflow(SCRIPT, { args: { ...ARGS, specialistsDir: DIR }, agentStub: stub });
+  assert.deepStrictEqual(result.missing, []);
+  assert.deepStrictEqual(result.failed, []);
+  const onboard = calls.filter((c) => c.opts.label.startsWith('onboard:'));
+  for (const c of onboard) assert.ok(c.prompt.includes(`${DIR}/`), c.opts.label);
+  for (const c of calls.filter(isResearchCritique)) assert.match(c.prompt, new RegExp(`read ${DIR}/[\\w-]+/knowledge\\.md`));
+  for (const c of calls) assert.doesNotMatch(c.prompt, /(^|[\s=`(])specialists\//m, c.opts.label);
 });
