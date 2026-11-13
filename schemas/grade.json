@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "findingsKept", "findingsDropped"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict", "reason", "drivenBy"],
+        "properties": {
+          "id": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["improved", "same", "worse"] },
+          "reason": { "type": "string" },
+          "drivenBy": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "findingsKept": { "type": "array", "items": { "type": "string" } },
+    "findingsDropped": { "type": "array", "items": { "type": "string" } }
+  }
+}

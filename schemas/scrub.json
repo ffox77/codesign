@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["listA", "listB"],
+  "properties": {
+    "listA": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "roles", "side1", "side2", "settle"],
+        "properties": {
+          "title": { "type": "string" },
+          "roles": { "type": "string" },
+          "side1": { "type": "string" },
+          "side2": { "type": "string" },
+          "settle": { "type": "string" }
+        }
+      }
+    },
+    "listB": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "roles", "side1", "side2", "settle"],
+        "properties": {
+          "title": { "type": "string" },
+          "roles": { "type": "string" },
+          "side1": { "type": "string" },
+          "side2": { "type": "string" },
+          "settle": { "type": "string" }
+        }
+      }
+    }
+  }
+}
