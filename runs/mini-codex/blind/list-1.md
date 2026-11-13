@@ -1,0 +1,17 @@
+### T1: Checking decisions nobody touches catches quiet failures but adds regular review work
+Roles: organizational learning, the daily user
+Side 1: Every revisit trigger needs a named person to watch it and a set time to check it, with a fallback when no shared session happens. Decisions that never come back into active work can still do harm, so follow-up has to catch failed assumptions even when nobody opens the entry.
+Side 2: Follow-up should ride on related work in the repo and keep developer effort small. Asking for a visible decision whenever new work touches a stale entry covers the concerns that matter, without adding regular checks on decisions unrelated to current work.
+Would settle it: Plant a failed assumption in a decision that current work will not touch, then compare checking driven by repo activity with a named weekly fallback check. Track how long it takes to catch, the review minutes spent, and whether catching it sooner changes what anyone does next; catching it sooner must lead to enough useful action to pay for the regular cost.
+
+### T2: Writing down testable assumptions helps learning but eats into the time allowed for writing entries
+Roles: organizational learning, the daily user
+Side 1: Each decision that qualifies must name the assumption it rests on and a visible sign that would back it up or call it into question. A choice and a convincing reason alone cannot tell whether experience supports the decision or what evidence should change it.
+Side 2: Both developers must keep writing entries within the stated time allowance, counted from noticing a decision through recalling the reason, agent review and committing the entry. Extra thinking and writing can make unclear or passing decisions too costly to record, so more of them get skipped.
+Would settle it: Over a month, compare entries with only a choice and reason against entries that also hold an assumption and a sign, across decisions made in chat, in code and in passing. Track the full time to write each entry, how many qualifying decisions get skipped, and whether another developer can name the evidence that would change each choice. Keep the extra step if its benefit to learning holds within the two-minute allowance without noticeably more skipped decisions.
+
+### T3: Early staleness flags help learning but interrupt work on weak evidence
+Roles: organizational learning, the daily user
+Side 1: Early, easily raised flags and quick review stop outdated assumptions from building on themselves. Waiting for an obvious failure in current work delays learning; a stale decision needs a clear stand-in choice to work from and a person who owns resolving it.
+Side 2: Pulling in a person should take concrete evidence: the decision affected, the trigger or assumption that failed, and the work it touches. Guesswork and repeated questions from agents running side by side use up developer attention and can block ordinary work without changing the right action.
+Would settle it: Run several agents at once on tasks that contain deliberately failed triggers and harmless-looking contradictions, and vary how much it takes to call in a person. Count separate and repeated interruptions, time spent waiting, time to catch a problem, and cases of wrongly relying on stale choices. Pick the level that stops costly reliance on stale choices at a review load people accept, with one shared answer for repeated concerns.

@@ -1,0 +1,13 @@
+{
+  "first": [
+    {"id": "T1", "mark": "obvious", "inBaseline": true, "reason": "Detail versus brevity is the central tension the brief already names; the baseline settles it with reason-plus-tradeoff, 40-80 words and no exhaustive alternatives, and the settle test is loosely defined."},
+    {"id": "T2", "mark": "real", "inBaseline": true, "reason": "Repeated flags of one unresolved stale entry across agent sessions is a real tension, but the baseline already requires the session developer to resolve before relying and adds a weekly scan of unresolved stale entries."}
+  ],
+  "second": [
+    {"id": "T1", "mark": "real", "inBaseline": true, "reason": "Catching failures in untouched decisions versus keeping review tied to activity is a genuine trade-off with a runnable planted-failure test, though the baseline's five-minute weekly trigger scan already settles it."},
+    {"id": "T2", "mark": "obvious", "inBaseline": true, "reason": "The baseline's required observable revisit trigger already plays the role of the evidence sign, so this mostly restates the known detail-versus-time pressure."},
+    {"id": "T3", "mark": "real", "inBaseline": false, "reason": "The baseline lets agents flag merely suspected staleness and sets no evidence bar, so the threshold for interrupting a person with parallel agents is an open, decidable conflict with a concrete test."}
+  ],
+  "preferred": "second",
+  "why": "The second list has one real conflict the baseline leaves open (the evidence bar for agent staleness flags) with a concrete test; the first list's entries are either the brief's known brevity tension or already handled by the baseline."
+}

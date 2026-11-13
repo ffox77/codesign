@@ -1,0 +1,13 @@
+{
+  "first": [
+    {"id": "T1", "mark": "obvious", "inBaseline": true, "reason": "Catching stale decisions nobody touches is a standard log concern, and the baseline already settles it with a capped five-minute weekly scan of active triggers on top of checks during work."},
+    {"id": "T2", "mark": "obvious", "inBaseline": true, "reason": "This is the usual detail-versus-brevity pull; the baseline already requires an observable revisit trigger within a 40-80 word, two-minute budget, which covers most of the testable-assumption ask."},
+    {"id": "T3", "mark": "real", "inBaseline": false, "reason": "Both sides are strong. The baseline lets agents flag suspected staleness but sets no evidence bar and no way to merge repeat flags from parallel agents, and the settle test can be run, though it is broad."}
+  ],
+  "second": [
+    {"id": "T1", "mark": "obvious", "inBaseline": true, "reason": "This is the usual context-versus-upkeep pull; the baseline settles it by asking for the reason and tradeoff and excluding exhaustive alternatives, and 'worth its cost' in the settle line is hard to measure."},
+    {"id": "T2", "mark": "real", "inBaseline": false, "reason": "Asking a person again in every session versus one grouped follow-up is a real gap: the baseline has agents flag staleness per session with no grouping. The settle test is concrete and can be run."}
+  ],
+  "preferred": "second",
+  "why": "Both lists have one real entry that is new beyond the baseline, but the second list's T2 is narrower and has a more workable settle test than the first list's broader T3, and the second list carries less overlap with what the baseline already settles."
+}
