@@ -9,7 +9,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 OUT="$TMP/grade-out.json"
 PROMPT="Follow prompts/referee/grader.md with these values: FIXTURE_DIR=test/fixtures/grade (tasks.md, baseline-answers.md, check-answers.md and extracts.md are in that folder)."
-codex exec -C "$REPO" -s read-only --ephemeral \
+codex exec -C "$REPO" --ephemeral -c 'default_permissions="codesign-referee"' \
   --output-schema schemas/grade.json -o "$OUT" "$PROMPT" < /dev/null
 [ -s "$OUT" ] || { echo "FAIL: Codex wrote no output file" >&2; exit 1; }
 node -e '

@@ -40,7 +40,9 @@ Launch a run in a turn whose message is only the go-ahead: the workflow tool cop
 
 ## Local settings
 
-`.claude/settings.local.json` (not committed) turns off the Reasons plugins for this project and denies the file tools access to the Reasons project, the playground repo and the local plugin marketplace. It does not cover Bash, and it does not cover Codex: when Codex makes, its reads happen inside `codex exec`.
+`.claude/settings.local.json` (not committed) turns off the Reasons plugins for this project and denies the file tools access to the Reasons project, the playground repo and the local plugin marketplace. It does not cover Bash.
+
+`.codex/config.toml` (not committed) does the same for Codex. It defines two permission profiles that deny reads of those three paths: `codesign-make` (can write the workspace) and `codesign-referee` (read-only). The wrappers pick one with `-c 'default_permissions="…"'`. The macOS sandbox enforces the block, not only the model's instructions. Never pass `-s`/`--sandbox` alongside a profile: it replaces the profile and the reads go through. Without this file, every Codex step fails with `default_permissions refers to undefined profile`.
 
 ## Tests
 
